@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"strings"
 )
 
 const (
@@ -55,14 +56,20 @@ func main() {
 	}
 	// Send a relay request, specifying the app name
 	fmt.Fprintf(conn, RELAY_REQUEST+":echoserver")
-	ipport, err := bufio.NewReader(conn).ReadString('\n')
+	contents, err := bufio.NewReader(conn).ReadString('\n')
 	if err != nil {
 		fmt.Printf("Error reading relay request results: %s\n", err.Error())
 		os.Exit(1)
 	}
-	fmt.Printf("established relay address: %s\n",ipport)
+	// Should receive back the relayed-port:echoserver-port
+	ports := strings.Split(contents,":")
+	if len(ports) < 2 {
+		fmt.Printf("Error reading relay request port assignments\n")
+		os.Exit(1)
+	}
+	fmt.Printf("established relay address: %s\n",ports[1])
 
-	go echo(ipport)
+	go echo(ports[0])
 
 }
 

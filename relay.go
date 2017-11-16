@@ -65,16 +65,18 @@ func relay(appName string, conn net.Conn) {
 					if  err != nil {
 						conn.Write([]byte(fmt.Sprintf("Error requesting relay %s\n",err.Error())))
 					}
-					// Return a newline terminated message with the port
-					conn.Write([]byte(":" + port + "\n"))
+					// Return a newline terminated message with the ports
+					r := strings.Split(conn.RemoteAddr().String(),":")
+					var rport string
+					if len(r) > 1 {
+						rport = r[len(r) - 1]
+					}
+					conn.Write([]byte(rport + ":" + port + "\n"))
 				}
 			} else {
-				// Otherwise it is a connection request, call askConnection with the message content
-				//if err != nil {
-				//	fmt.Printf("Error granting connection request: %s\n", err.Error())
-				//} else {
-					askConnection(conn)
-				//}
+				// Otherwise it is a connection request, call askConnection
+				// TBD - what happens to the contents?
+				askConnection(conn)
 			}
 		}
 	//}
