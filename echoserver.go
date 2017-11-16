@@ -11,26 +11,13 @@ import (
 )
 
 const (
-        RELAY_REQUEST = "relay"
+	RELAY_REQUEST = "relay"
 )
 
-// Try to listen on the assigned ip and port
-func echo(ipport string){
-	ln, err := net.Listen("tcp", ipport)
-	if err != nil {
-		fmt.Printf("Error on listen: %s\n", err.Error())
-	//	os.Exit(1)
-	}
-	defer ln.Close()
-	fmt.Printf("Listening on %s...\n", ln.Addr())
+// Echo
+func echo(conn net.Conn) {
+	fmt.Printf("echoing between... %v and %v\n", conn.LocalAddr(), conn.RemoteAddr())
 	for {
-		conn, err := ln.Accept()
-		if err != nil {
-			fmt.Println("Error on connection accept: %s", err.Error())
-			os.Exit(1)
-		}
-		defer conn.Close()
-		fmt.Println("echoing...")
 		// Echo all incoming data
 		io.Copy(conn, conn)
 	}
@@ -50,10 +37,11 @@ func main() {
 
 	// Send a message to the host:port asking for a relay host:port
 	conn, err := net.Dial("tcp", *host+":"+*port)
-	if  err != nil {
+	if err != nil {
 		fmt.Println("Error dialing relay server: %v", err.Error())
 		os.Exit(1)
 	}
+	defer conn.Close()
 	// Send a relay request, specifying the app name
 	fmt.Fprintf(conn, RELAY_REQUEST+":echoserver")
 	contents, err := bufio.NewReader(conn).ReadString('\n')
@@ -62,14 +50,12 @@ func main() {
 		os.Exit(1)
 	}
 	// Should receive back the relayed-port:echoserver-port
-	ports := strings.Split(contents,":")
+	ports := strings.Split(contents, ":")
 	if len(ports) < 2 {
 		fmt.Printf("Error reading relay request port assignments\n")
 		os.Exit(1)
 	}
-	fmt.Printf("established relay address: %s\n",ports[1])
+	fmt.Printf("established relay address: %s\n", ports[1])
 
-	go echo(ports[0])
-
+	go echo(conn)
 }
-
