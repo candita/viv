@@ -70,11 +70,11 @@ func relay(appName string, conn net.Conn) {
 				}
 			} else {
 				// Otherwise it is a connection request, call askConnection with the message content
-				if err != nil {
-					fmt.Printf("Error granting connection request: %s\n", err.Error())
-				} else {
+				//if err != nil {
+				//	fmt.Printf("Error granting connection request: %s\n", err.Error())
+				//} else {
 					askConnection(conn)
-				}
+				//}
 			}
 		}
 	//}

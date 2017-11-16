@@ -13,6 +13,28 @@ const (
         RELAY_REQUEST = "relay"
 )
 
+// Try to listen on the assigned ip and port
+func echo(ipport string){
+	ln, err := net.Listen("tcp", ipport)
+	if err != nil {
+		fmt.Printf("Error on listen: %s\n", err.Error())
+	//	os.Exit(1)
+	}
+	defer ln.Close()
+	fmt.Printf("Listening on %s...\n", ln.Addr())
+	for {
+		conn, err := ln.Accept()
+		if err != nil {
+			fmt.Println("Error on connection accept: %s", err.Error())
+			os.Exit(1)
+		}
+		defer conn.Close()
+		fmt.Println("echoing...")
+		// Echo all incoming data
+		io.Copy(conn, conn)
+	}
+}
+
 func main() {
 	var port = flag.String("port", "", "port number")
 	var host = flag.String("host", "127.0.0.1", "host name")
@@ -40,24 +62,7 @@ func main() {
 	}
 	fmt.Printf("established relay address: %s\n",ipport)
 
-	// Try to listen on the assigned ip and port
-	//ln, err := net.Listen("tcp", ipport)
-	//if err != nil {
-		//fmt.Printf("Error on listen: %s\n", err.Error())
-	//	os.Exit(1)
-	//}
-	//defer ln.Close()
-	//fmt.Printf("Listening on %s...\n", ln.Addr())
-	for {
-		conn, err := ln.Accept()
-		if err != nil {
-			fmt.Println("Error on connection accept: %s", err.Error())
-			os.Exit(1)
-		}
-		defer conn.Close()
-		fmt.Println("echoing...")
-		// Echo all incoming data
-		io.Copy(conn, conn)
-	}
+	go echo(ipport)
+
 }
 
