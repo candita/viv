@@ -14,15 +14,6 @@ const (
 	RELAY_REQUEST = "relay"
 )
 
-// Echo
-func echo(conn net.Conn) {
-	fmt.Printf("echoing between... %v and %v\n", conn.LocalAddr(), conn.RemoteAddr())
-	for {
-		// Echo all incoming data
-		io.Copy(conn, conn)
-	}
-}
-
 func main() {
 	var port = flag.String("port", "", "port number")
 	var host = flag.String("host", "127.0.0.1", "host name")
@@ -52,10 +43,17 @@ func main() {
 	// Should receive back the relayed-port:echoserver-port
 	ports := strings.Split(contents, ":")
 	if len(ports) < 2 {
-		fmt.Printf("Error reading relay request port assignments\n")
+		if strings.Contains(contents, "Error") {
+			fmt.Println(contents)
+		} else {
+			fmt.Printf("Error reading relay request port assignments\n")
+		}
 		os.Exit(1)
 	}
 	fmt.Printf("established relay address: %s\n", ports[1])
 
-	go echo(conn)
+	//fmt.Printf("echoing between... %v and %v\n", conn.LocalAddr(), conn.RemoteAddr())
+	for {
+		io.Copy(conn, conn)
+	}
 }

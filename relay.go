@@ -6,7 +6,7 @@
 package main
 
 import (
-	"bufio"
+	//"bufio"
 	"flag"
 	"fmt"
 	"io"
@@ -51,14 +51,14 @@ func relay(appName string, conn net.Conn) {
 			fmt.Printf("Error reading connection: %s\n", err.Error())
 		} else {
 			content := string(bytes[:numBytes])
-			fmt.Printf("INPUT: %s\n", content)
+			//fmt.Printf("INPUT: %s\n", content)
 
 			// If it is a relay setup request call askRelay
 			if strings.Contains(content, RELAY_REQUEST) {
 				// Request should be formatted as relay:appname
 				parts := strings.Split(content, ":")
 				if len(parts) < 2 {
-					conn.Write([]byte("Error: no application name specified\n"))
+					conn.Write([]byte("Error - no application name specified\n"))
 				} else {
 					port, err := askRelay(parts[1])
 					if err != nil {
@@ -138,7 +138,7 @@ func askRelay(appName string) (string, error) {
 // Simulate an app asking for a connection
 func askConnection(data string, conn net.Conn) {
 	// Setup the tunnel between remote and the port for this app
-	go deliverTraffic(data, conn)
+	deliverTraffic(data, conn)
 }
 
 func read(remoteConn net.Conn, ch chan []byte) {
@@ -166,27 +166,9 @@ func write(localConn net.Conn, ch chan []byte) {
 
 // Deliver traffic between the two endpoints
 func deliverTraffic(data string, conn net.Conn) {
-	reader := bufio.NewReader(conn)
-	writer := bufio.NewWriter(conn)
-	tunnel := bufio.NewReadWriter(reader, writer)
-	// Now read and write between the two endpoints
-	//go func(data string) {
-	_, err := tunnel.WriteString(data)
-	if err != nil {
-		fmt.Printf("Error writing: %s", err.Error())
-	} else {
-		fmt.Printf("Wrote %s", data)
-	}
-	//}(data)
-
-	//go func() {
-	data, err = tunnel.ReadString('\n')
-	if err != nil {
-		fmt.Printf("Error reading: %s", err.Error())
-	} else {
-		fmt.Printf("Read %s", data)
-	}
-	//}()
+	//fmt.Printf("deliver -- local: %s, remote: %s\n", conn.LocalAddr(), conn.RemoteAddr())
+	// Just write to endpoint
+	conn.Write([]byte(data))
 }
 
 func main() {
