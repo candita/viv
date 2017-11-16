@@ -40,8 +40,7 @@ func init() {
 
 // Handle the request to the relay server.  It is either a connection request or a relay setup request
 func relay(appName string, conn net.Conn) {
-	//for {
-
+	for {
 		fmt.Printf("local: %s, remote: %s\n", conn.LocalAddr(), conn.RemoteAddr())
 		var bytes = make([]byte, 2048)
 		numBytes, err := conn.Read(bytes)
@@ -75,11 +74,10 @@ func relay(appName string, conn net.Conn) {
 				}
 			} else {
 				// Otherwise it is a connection request, call askConnection
-				// TBD - what happens to the contents?
-				askConnection(conn)
+				askConnection(content,conn)
 			}
 		}
-	//}
+	}
 }
 
 func listen(appName, addr, port string) {
@@ -138,9 +136,9 @@ func askRelay(appName string) (string, error) {
 }
 
 // Simulate an app asking for a connection
-func askConnection(conn net.Conn) {
+func askConnection(data string, conn net.Conn) {
 	// Setup the tunnel between remote and the port for this app
-	go deliverTraffic(conn)
+	go deliverTraffic(data,conn)
 }
 
 func read(remoteConn net.Conn, ch chan []byte){
@@ -167,23 +165,36 @@ func write(localConn net.Conn, ch chan []byte){
 }
 
 // Deliver traffic between the two endpoints
-func deliverTraffic(conn net.Conn){
-	remoteConn, err := net.Dial("tcp", conn.RemoteAddr().String())
+func deliverTraffic(data string, conn net.Conn){
+	remoteConn, err := net.Dial("tcp", conn.LocalAddr().String())
 	if err != nil {
-		fmt.Printf("Error connecting to remote %v: %s\n", conn.RemoteAddr(), err.Error())
+		fmt.Printf("Error connecting to remote %v: %s\n", conn.LocalAddr(), err.Error())
 		return
 	}
-	localConn, err := net.Dial("tcp", conn.RemoteAddr().String())
-	if err != nil {
-		fmt.Printf("Error connecting to local %v: %s\n", conn.RemoteAddr(), err.Error())
-		return
-	}
+	//localConn, err := net.Dial("tcp", conn.RemoteAddr().String())
+	//if err != nil {
+	//	fmt.Printf("Error connecting to local %v: %s\n", conn.RemoteAddr(), err.Error())
+	//	return
+	//}
 	// Now read and write between the two endpoints
 	for {
 		var ch = make(chan []byte)
 		defer close(ch)
+		// Let it stay 10 seconds, waiting
+		err := remoteConn.SetDeadline(time.Now().Add(time.Second * 10))
+		if err != nil {
+			fmt.Printf("Error setting read/write timeout: %s", err.Error())
+		}
+		ch <- []byte(data)
+		go write(remoteConn,ch)
 		go read(remoteConn, ch)
+		// Let it stay 10 seconds, waiting
+		/*err := localConn.SetDeadline(time.Now().Add(time.Second * 10))
+		if err != nil {
+			fmt.Printf("Error setting read/write timeout: %s", err.Error())
+		}
 		go write(localConn, ch)
+		*/
 	}
 }
 
