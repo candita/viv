@@ -52,7 +52,6 @@ func main() {
 	}
 	fmt.Printf("established relay address: %s\n", ports[1])
 
-	//fmt.Printf("echoing between... %v and %v\n", conn.LocalAddr(), conn.RemoteAddr())
 	for {
 		io.Copy(conn, conn)
 	}
