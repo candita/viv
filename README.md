@@ -13,13 +13,13 @@ The relay server has set up a relay between your program, itself, and that port.
 program to this port, you are talking to your program through the relay. 
 
 Example code that you add to your program:   
-// Dial the relay host/port
+```// Dial the relay host/port
 conn, err := net.Dial("tcp", host+":"+port)
 // Send the message
 fmt.Fprintf(conn, "deadbeaffade")
 // Read the relay port
 port, err := bufio.NewReader(conn).ReadString('\n')
-// Print the port and get on with the rest of your program
+// Print the port and get on with the rest of your program```
 
 To use the relay, note the relay's host address and configured port.   
 Use the relay's host and port as parameters when you start your program, for example:
