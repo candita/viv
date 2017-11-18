@@ -16,7 +16,8 @@ The relay server has set up a relay between your program, itself, and that port.
 program to this port, you are talking to your program through the relay. 
 
 Example code that you add to your program:   
-```// Dial the relay host/port
+```
+// Dial the relay host/port
 conn, err := net.Dial("tcp", host+":"+port)
 // Send the message
 fmt.Fprintf(conn, "deadbeaffade")
