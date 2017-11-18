@@ -6,25 +6,23 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"strings"
+	"time"
 )
 
 const (
-	RELAY_REQUEST = "relay:"
+	RELAY_REQUEST = "deadbeaffade"
 )
 
-type connInfo struct {
-	IpAddress string
-	Port      string
-}
+var relayPort string
 
 // Handle the request to the relay server.  It is either a connection request or a relay setup request
-func relay(appName string, conn net.Conn) {
-	fmt.Printf("For %s, local: %s, remote: %s\n", appName, conn.LocalAddr(), conn.RemoteAddr())
+func relay(conn net.Conn) {
+	//fmt.Printf("local: %s, remote: %s\n", conn.LocalAddr(), conn.RemoteAddr())
 	for {
 		var bytes = make([]byte, 2048)
 		numBytes, err := conn.Read(bytes)
@@ -39,24 +37,31 @@ func relay(appName string, conn net.Conn) {
 
 			// If it is a relay setup request call askRelay
 			if strings.Contains(content, RELAY_REQUEST) {
-				// Request should be formatted as relay:appname
-				parts := strings.Split(content, ":")
-				if len(parts) < 2 {
-					conn.Write([]byte("Error - no application name specified\n"))
+				port := askRelay()
+				if port == "none" {
+					conn.Write([]byte("Error - no free ports"))
 				} else {
-					port := askRelay(parts[1])
 					// Return a newline terminated message with the port
 					conn.Write([]byte(":" + port + "\n"))
 				}
 			} else {
-				// Otherwise it is a connection request, call askConnection
-				askConnection(content, conn)
+				// Otherwise it is a connection request, deliver traffic
+				conn.Write([]byte(content))
 			}
 		}
 	}
 }
 
-func listen(appName, addr, port string, portChan chan string) {
+// Get the port from the Addr
+func getPort(addr net.Addr) (string, error) {
+	parts := strings.Split(addr.String(), ":")
+	if len(parts) < 2 {
+		return "", fmt.Errorf("Error in reading port from address: " + addr.String())
+	}
+	return parts[len(parts)-1], nil
+}
+
+func listen(port string, portChan chan string) {
 	ln, err := net.Listen("tcp", ":"+port)
 	if err != nil {
 		fmt.Printf("Error on listen: %s\n", err.Error())
@@ -64,13 +69,13 @@ func listen(appName, addr, port string, portChan chan string) {
 	}
 	defer ln.Close()
 	fmt.Printf("Listening on %s...\n", ln.Addr())
-	parts := strings.Split(ln.Addr().String(), ":")
-	if len(parts) < 2 {
-		fmt.Printf("Error in reading port from address: %s", ln.Addr())
+	assignedPort, err := getPort(ln.Addr())
+	if err != nil {
+		fmt.Println(err.Error())
 		return
 	}
-	// Notify which port was obtained
-	portChan <- parts[len(parts)-1]
+	// Notify which port was obtained (in case it was passed as zero)
+	portChan <- assignedPort
 	for {
 		conn, err := ln.Accept()
 		defer conn.Close()
@@ -78,39 +83,34 @@ func listen(appName, addr, port string, portChan chan string) {
 			fmt.Println("Error on connection accept: %s", err.Error())
 			return
 		}
-		go relay(appName, conn)
+		go relay(conn)
 	}
 }
 
 // For an app asking for a relay, listen and return listening port
-func askRelay(appName string) string {
+func askRelay() string {
 	portChan := make(chan string)
-	go listen(appName, "", "0", portChan)
-	port := <-portChan
-	return port
+	defer close(portChan)
+	go listen("0", portChan)
+	// In case there is no port available, timeout
+	select {
+	case port := <-portChan:
+		return port
+	case <-time.After(time.Second * 1):
+		return "none"
+	}
 }
 
-// Simulate an app asking for a connection
-func askConnection(data string, conn net.Conn) {
-	// Setup the tunnel between remote and the port for this app
-	deliverTraffic(data, conn)
-}
-
-// Deliver traffic between the two endpoints
-func deliverTraffic(data string, conn net.Conn) {
-	//fmt.Printf("deliver -- local: %s, remote: %s\n", conn.LocalAddr(), conn.RemoteAddr())
-	// Just write to endpoint
-	conn.Write([]byte(data))
-}
-
+// ./relay port
 func main() {
-	var port = flag.String("port", "8080", "Relay server listen port")
-	flag.Parse()
-	if *port == "" {
-		*port = "8080"
+	if len(os.Args) < 2 {
+		relayPort = "8080"
+	} else {
+		relayPort = os.Args[1]
 	}
 	ch := make(chan string)
-	go listen("relay", "", *port, ch)
+	defer close(ch)
+	go listen(relayPort, ch)
 	_ = <-ch // empty it
 	select {}
 }
