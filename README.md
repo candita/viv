@@ -1,12 +1,15 @@
 *Build*
+
 go build -o relay
 cd echoserver
 go build 
 
 *Deploy*
+
 ../relay <port>
 
 *Usage*
+
 To configure your program to use the relay, send a message containing "deadbeaffade" to the relay's host 
 and port, and read the response.  The response will contain a port to which you can connect a second program.
 The relay server has set up a relay between your program, itself, and that port.  When you connect a second 
