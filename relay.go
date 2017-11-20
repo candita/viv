@@ -26,11 +26,16 @@ func relay(conn net.Conn) {
 	for {
 		var bytes = make([]byte, 2048)
 		numBytes, err := conn.Read(bytes)
+		if numBytes == 0 {
+			// Connection was gracefully closed, exit
+			return
+		}
 		if err != nil {
 			if err == io.EOF {
 				continue
 			}
 			fmt.Printf("Error reading connection: %s\n", err.Error())
+			return
 		} else {
 			content := string(bytes[:numBytes])
 			//fmt.Printf("INPUT: %s\n", content)
@@ -65,6 +70,9 @@ func listen(port string, portChan chan string) {
 	ln, err := net.Listen("tcp", ":"+port)
 	if err != nil {
 		fmt.Printf("Error on listen: %s\n", err.Error())
+		if ln != nil {
+			ln.Close()
+		}
 		return
 	}
 	defer ln.Close()
@@ -81,6 +89,9 @@ func listen(port string, portChan chan string) {
 		defer conn.Close()
 		if err != nil {
 			fmt.Println("Error on connection accept: %s", err.Error())
+			if conn != nil {
+				conn.Close()
+			}
 			return
 		}
 		go relay(conn)
