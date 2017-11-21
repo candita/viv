@@ -13,28 +13,9 @@ const (
 	MY_RELAY_REQUEST = "deadbeaffade"
 )
 
-func copy(listenPort, relayPort string) {
-	fmt.Printf("Got port: %s\n", listenPort)
-	ln, err := net.Listen("tcp", ":"+listenPort)
-	if err != nil {
-		fmt.Printf("Error on listen: %s\n", err.Error())
-		if ln != nil {
-			ln.Close()
-		}
-		return
-	}
-	fmt.Printf("Listening on: %s\n", listenPort)
-	defer ln.Close()
+func copy(conn net.Conn) {
+
 	for {
-		conn, err := ln.Accept()
-		defer conn.Close()
-		if err != nil {
-			fmt.Println("Error on connection accept: %s", err.Error())
-			if conn != nil {
-				conn.Close()
-			}
-			return
-		}
 		// Read
 		var bytes = make([]byte, 2048)
 		numBytes, err := conn.Read(bytes)
@@ -60,17 +41,48 @@ func copy(listenPort, relayPort string) {
 		//relayPort = parts[0]
 		//content = parts[1]
 		//}
-		newConn, err := net.Dial("tcp", ":"+relayPort)
-		if err != nil {
-			fmt.Printf("Error dialing relay server: %s\n", err.Error())
-			if newConn != nil {
-				newConn.Close()
-			}
-			return
-		}
-		defer newConn.Close()
+
 		fmt.Println("Writing " + content)
-		newConn.Write([]byte(content))
+		conn.Write([]byte(content))
+	}
+}
+
+// Return a new relay port
+func relayRequest(conn net.Conn) (string, error) {
+	// Send a relay request to the given conn
+	fmt.Fprintf(conn, MY_RELAY_REQUEST)
+	contents, err := bufio.NewReader(conn).ReadString('\n')
+	if err != nil {
+		return "", err
+	}
+	// Should receive back the relay address but could receive an error
+	if strings.Contains(contents, "Error") {
+		fmt.Println(contents)
+		return "", fmt.Errorf(contents)
+	}
+	return contents, nil
+
+}
+
+// Return a new connection
+// Return a new relay port
+func getConnection(conn net.Conn) (net.Conn, error) {
+	var port string
+	for {
+		contents, err := bufio.NewReader(conn).ReadString('\n')
+		if err != nil {
+			return nil, err
+		}
+		// Should receive back the relay address
+		if strings.Contains(contents, "Listen:") {
+			port = strings.Replace(contents, "Listen", "", -1)
+			newConn, err := net.Dial("tcp", port)
+			if err != nil {
+				return nil, err
+			}
+			fmt.Printf("Dialed new connection %s\n", port)
+			return newConn, nil
+		}
 	}
 }
 
@@ -94,27 +106,35 @@ func main() {
 		os.Exit(1)
 	}
 	defer conn.Close()
-	// Send a relay request
-	fmt.Fprintf(conn, MY_RELAY_REQUEST)
-	contents, err := bufio.NewReader(conn).ReadString('\n')
-	if err != nil {
-		fmt.Printf("Error reading relay request results: %s\n", err.Error())
-		os.Exit(1)
-	}
-	// Should receive back the relay address but could receive an error
-	if strings.Contains(contents, "Error") {
-		fmt.Println(contents)
-		os.Exit(1)
-	}
-	ports := strings.Split(contents, ":")
-	if len(ports) < 2 {
-		fmt.Println("Error establishing connection, ports unassigned")
-		os.Exit(1)
-	}
-	fmt.Printf("established relay address: %s\n", ports[1])
 
-	for {
-		copy(ports[0], relayPort)
+	// Send a relay request to get a public port
+	publicPort, err := relayRequest(conn)
+	if err != nil {
+		fmt.Printf("Error reading relay request results for public port: %s\n", err.Error())
+		os.Exit(1)
 	}
+	// Send a relay request to get a private port
+	/**privatePort, err := relayRequest(conn)
+		if err != nil {
+			fmt.Printf("Error reading relay request results for private port: %s\n", err.Error())
+			os.Exit(1)
+		}
+	**/
+	fmt.Printf("established relay address: %s\n", publicPort)
+	//fmt.Printf("established private address: %s\n", privatePort)
+
+	// Listen for a message about a new connection
+	newConn, err := getConnection(conn)
+	if err != nil {
+		if newConn != nil {
+			newConn.Close()
+		}
+		fmt.Printf("Error getting a new connection: %s\n", err.Error())
+		os.Exit(1)
+	}
+	defer newConn.Close()
+	//for {
+	go copy(newConn)
+	//}
 	select {}
 }
