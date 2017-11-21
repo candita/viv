@@ -13,8 +13,28 @@ const (
 	MY_RELAY_REQUEST = "deadbeaffade"
 )
 
-func copy(conn net.Conn) {
+func copy(listenPort, relayPort string) {
+	fmt.Printf("Got port: %s\n", listenPort)
+	ln, err := net.Listen("tcp", ":"+listenPort)
+	if err != nil {
+		fmt.Printf("Error on listen: %s\n", err.Error())
+		if ln != nil {
+			ln.Close()
+		}
+		return
+	}
+	fmt.Printf("Listening on: %s\n", listenPort)
+	defer ln.Close()
 	for {
+		conn, err := ln.Accept()
+		defer conn.Close()
+		if err != nil {
+			fmt.Println("Error on connection accept: %s", err.Error())
+			if conn != nil {
+				conn.Close()
+			}
+			return
+		}
 		// Read
 		var bytes = make([]byte, 2048)
 		numBytes, err := conn.Read(bytes)
@@ -29,24 +49,43 @@ func copy(conn net.Conn) {
 			// Connection was gracefully closed, exit
 			return
 		}
+		fmt.Printf("Local %s, remote: %s\n", conn.LocalAddr(), conn.RemoteAddr())
+		fmt.Println("Reading " + string(bytes[:numBytes]))
+
 		// Write
 		content := string(bytes[:numBytes])
-		conn.Write([]byte(content))
+		// See if there is a return destination "xxx:content"
+		//parts := strings.Split(content, ":")
+		//if len(parts) > 1 {
+		//relayPort = parts[0]
+		//content = parts[1]
+		//}
+		newConn, err := net.Dial("tcp", ":"+relayPort)
+		if err != nil {
+			fmt.Printf("Error dialing relay server: %s\n", err.Error())
+			if newConn != nil {
+				newConn.Close()
+			}
+			return
+		}
+		defer newConn.Close()
+		fmt.Println("Writing " + content)
+		newConn.Write([]byte(content))
 	}
 }
 
 func main() {
-	var host, port string
+	var host, relayPort string
 	if len(os.Args) < 3 {
 		fmt.Println("Usage: echoserver <hostname> <portnum>")
 		os.Exit(1)
 	} else {
 		host = os.Args[1]
-		port = os.Args[2]
+		relayPort = os.Args[2]
 	}
 
 	// Send a message to the host:port asking for a relay host:port
-	conn, err := net.Dial("tcp", host+":"+port)
+	conn, err := net.Dial("tcp", host+":"+relayPort)
 	if err != nil {
 		fmt.Printf("Error dialing relay server: %s\n", err.Error())
 		if conn != nil {
@@ -67,7 +106,15 @@ func main() {
 		fmt.Println(contents)
 		os.Exit(1)
 	}
-	fmt.Printf("established relay address: %s\n", contents)
+	ports := strings.Split(contents, ":")
+	if len(ports) < 2 {
+		fmt.Println("Error establishing connection, ports unassigned")
+		os.Exit(1)
+	}
+	fmt.Printf("established relay address: %s\n", ports[1])
 
-	go copy(conn)
+	for {
+		copy(ports[0], relayPort)
+	}
+	select {}
 }
