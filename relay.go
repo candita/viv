@@ -16,6 +16,7 @@ import (
 
 const (
 	RELAY_REQUEST = "deadbeaffade"
+	LISTEN_PORT   = "badefeedafed"
 )
 
 type route struct {
@@ -53,7 +54,7 @@ func relay(conn net.Conn) {
 			if strings.Contains(content, RELAY_REQUEST) {
 				port := askRelay()
 				if port == "none" {
-					conn.Write([]byte("Error - no free ports"))
+					conn.Write([]byte("Error - no free relay ports"))
 					return
 				} else {
 					// Remember where this relay request came from
@@ -62,6 +63,16 @@ func relay(conn net.Conn) {
 					// Send a newline terminated message with the :port
 					conn.Write([]byte(":" + port + "\n"))
 				}
+				// If it is a listening port request, get a new port and write it
+			} else if strings.Contains(content, LISTEN_PORT) {
+				newPort := askRelay()
+				if newPort == "none" {
+					conn.Write([]byte("Error - no free ports"))
+					return
+				}
+				conn.Write([]byte("Listen:" + newPort + "\n"))
+				fmt.Printf("Sent listen message: %s to %s\n", newPort, conn.RemoteAddr().String())
+
 			} else {
 				// Otherwise it is a client request, find saved connection or create new
 				var savedConn net.Conn
@@ -82,27 +93,8 @@ func relay(conn net.Conn) {
 						savedConn = routes[conn.RemoteAddr().String()].Connection
 					}
 				}
-				if savedConn == nil {
-					// this is the first contact from this client, set a new route
-					newPort := askRelay()
-					// Tell the program to dial to a new port from us
-					newConn, err := net.Dial("tcp", relayPort)
-					if err != nil {
-						fmt.Printf("Error dialing new port on program: %s\n", err.Error())
-						return
-					}
-					newConn.Write([]byte("Listen:" + newPort + "\n"))
-					// May want to sleep here or wait until we know the new conn is up
-					time.Sleep(time.Second * 1)
-					fmt.Printf("Sent listen message: %s to %s\n", newPort, conn.RemoteAddr().String())
-
-					// Save this route for lookup later
-					routes[conn.RemoteAddr().String()] = route{newConn}
-					fmt.Printf("Added index to routes: %s\n", conn.RemoteAddr().String())
-					conn = newConn
-				} else {
-					fmt.Printf("Found conn in routes: %s\n", conn.RemoteAddr().String())
-					conn = savedConn // write to the connection stored for this
+				if savedConn != nil {
+					conn = savedConn
 				}
 				conn.Write([]byte(content))
 				fmt.Printf("Wrote %s to %s\n", content, conn.RemoteAddr().String())

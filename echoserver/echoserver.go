@@ -11,6 +11,7 @@ import (
 
 const (
 	MY_RELAY_REQUEST = "deadbeaffade"
+	MY_LISTEN_PORT   = "badefeedafed"
 )
 
 func copy(oldConn net.Conn) {
@@ -76,33 +77,28 @@ func relayRequest(conn net.Conn) (string, error) {
 // Return a new connection
 func getConnection(conn net.Conn) (newConn net.Conn, err error) {
 	var port, contents string
-	fmt.Println("begin")
-	for {
-		contents, err = bufio.NewReader(conn).ReadString('\n')
-		if err != nil {
-			if err == io.EOF {
-				continue
-			}
-			return nil, err
-		}
+	// Explicitly ask for the connection port
+	fmt.Fprintf(conn, MY_LISTEN_PORT)
+	contents, err = bufio.NewReader(conn).ReadString('\n')
+	if err != nil {
+		return nil, err
 	}
-	fmt.Println("end")
-
-	// Should receive back the relay address
+	// Should receive back the Listen:port message
 	if strings.Contains(contents, "Listen:") {
 		port = strings.Replace(contents, "Listen", "", -1)
-		newConn, err = net.Dial("tcp", port)
+		fmt.Printf("Received port: %s\n", port)
+		newConn, err = net.Dial("tcp", host+port)
 		if err != nil {
 			return nil, err
 		}
-		fmt.Printf("Dialed new connection %s\n", port)
 		return newConn, nil
 	}
 	return nil, fmt.Errorf("No Listen port provided")
 }
 
+var host, relayPort string
+
 func main() {
-	var host, relayPort string
 	if len(os.Args) < 3 {
 		fmt.Println("Usage: echoserver <hostname> <portnum>")
 		os.Exit(1)
