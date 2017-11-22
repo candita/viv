@@ -13,8 +13,17 @@ const (
 	MY_RELAY_REQUEST = "deadbeaffade"
 )
 
-func copy(conn net.Conn) {
-
+func copy(oldConn net.Conn) {
+	// Listen for a message about a new connection
+	conn, err := getConnection(oldConn)
+	if err != nil {
+		if conn != nil {
+			conn.Close()
+		}
+		fmt.Printf("Error getting a new connection: %s\n", err.Error())
+		os.Exit(1)
+	}
+	defer conn.Close()
 	for {
 		// Read
 		var bytes = make([]byte, 2048)
@@ -43,7 +52,7 @@ func copy(conn net.Conn) {
 		//}
 
 		fmt.Println("Writing " + content)
-		conn.Write([]byte(content))
+		conn.Write([]byte("echoed " + content))
 	}
 }
 
@@ -65,25 +74,31 @@ func relayRequest(conn net.Conn) (string, error) {
 }
 
 // Return a new connection
-// Return a new relay port
-func getConnection(conn net.Conn) (net.Conn, error) {
-	var port string
+func getConnection(conn net.Conn) (newConn net.Conn, err error) {
+	var port, contents string
+	fmt.Println("begin")
 	for {
-		contents, err := bufio.NewReader(conn).ReadString('\n')
+		contents, err = bufio.NewReader(conn).ReadString('\n')
+		if err != nil {
+			if err == io.EOF {
+				continue
+			}
+			return nil, err
+		}
+	}
+	fmt.Println("end")
+
+	// Should receive back the relay address
+	if strings.Contains(contents, "Listen:") {
+		port = strings.Replace(contents, "Listen", "", -1)
+		newConn, err = net.Dial("tcp", port)
 		if err != nil {
 			return nil, err
 		}
-		// Should receive back the relay address
-		if strings.Contains(contents, "Listen:") {
-			port = strings.Replace(contents, "Listen", "", -1)
-			newConn, err := net.Dial("tcp", port)
-			if err != nil {
-				return nil, err
-			}
-			fmt.Printf("Dialed new connection %s\n", port)
-			return newConn, nil
-		}
+		fmt.Printf("Dialed new connection %s\n", port)
+		return newConn, nil
 	}
+	return nil, fmt.Errorf("No Listen port provided")
 }
 
 func main() {
@@ -113,28 +128,10 @@ func main() {
 		fmt.Printf("Error reading relay request results for public port: %s\n", err.Error())
 		os.Exit(1)
 	}
-	// Send a relay request to get a private port
-	/**privatePort, err := relayRequest(conn)
-		if err != nil {
-			fmt.Printf("Error reading relay request results for private port: %s\n", err.Error())
-			os.Exit(1)
-		}
-	**/
 	fmt.Printf("established relay address: %s\n", publicPort)
-	//fmt.Printf("established private address: %s\n", privatePort)
 
-	// Listen for a message about a new connection
-	newConn, err := getConnection(conn)
-	if err != nil {
-		if newConn != nil {
-			newConn.Close()
-		}
-		fmt.Printf("Error getting a new connection: %s\n", err.Error())
-		os.Exit(1)
-	}
-	defer newConn.Close()
 	//for {
-	go copy(newConn)
+	go copy(conn)
 	//}
 	select {}
 }

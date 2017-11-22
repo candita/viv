@@ -24,7 +24,8 @@ type route struct {
 
 var (
 	relayPort string
-	routes    map[string]route // Index is relay port
+	routes    map[string]route  // Index is relay port
+	relays    map[string]string // Index is remote port
 )
 
 // Handle the request to the relay server.  It is either a connection request or a relay setup request
@@ -55,21 +56,53 @@ func relay(conn net.Conn) {
 					conn.Write([]byte("Error - no free ports"))
 					return
 				} else {
+					// Remember where this relay request came from
+					relays[port] = conn.RemoteAddr().String()
+					fmt.Printf("Added port %s to relays[%s]\n", conn.RemoteAddr().String(), port)
 					// Send a newline terminated message with the :port
 					conn.Write([]byte(":" + port + "\n"))
 				}
 			} else {
-				// Otherwise it is a connection request, find saved connection or create new
-				savedConn, ok := routes[conn.RemoteAddr().String()]
-				if !ok {
-					// If this is the first contact from this client, set a new connection
+				// Otherwise it is a client request, find saved connection or create new
+				var savedConn net.Conn
+				// Check for a relay made already for the client destination program
+				p, _ := getPort(conn.LocalAddr())
+				relayPort, ok := relays[p]
+				if ok {
+					_, ok = routes[relayPort]
+					if ok {
+						savedConn = routes[relayPort].Connection
+					}
+				}
+				// Check for a route made already for the source port
+				if savedConn == nil {
+					// If there's no relay, check for a route
+					_, ok = routes[conn.RemoteAddr().String()]
+					if ok {
+						savedConn = routes[conn.RemoteAddr().String()].Connection
+					}
+				}
+				if savedConn == nil {
+					// this is the first contact from this client, set a new route
 					newPort := askRelay()
-					// Write the new port to the old connection
-					conn.Write([]byte("Listen:" + newPort))
-					// May want to sleep here
+					// Tell the program to dial to a new port from us
+					newConn, err := net.Dial("tcp", relayPort)
+					if err != nil {
+						fmt.Printf("Error dialing new port on program: %s\n", err.Error())
+						return
+					}
+					newConn.Write([]byte("Listen:" + newPort + "\n"))
+					// May want to sleep here or wait until we know the new conn is up
+					time.Sleep(time.Second * 1)
+					fmt.Printf("Sent listen message: %s to %s\n", newPort, conn.RemoteAddr().String())
 
+					// Save this route for lookup later
+					routes[conn.RemoteAddr().String()] = route{newConn}
+					fmt.Printf("Added index to routes: %s\n", conn.RemoteAddr().String())
+					conn = newConn
 				} else {
-					conn = savedConn.Connection // write to the connection stored for this
+					fmt.Printf("Found conn in routes: %s\n", conn.RemoteAddr().String())
+					conn = savedConn // write to the connection stored for this
 				}
 				conn.Write([]byte(content))
 				fmt.Printf("Wrote %s to %s\n", content, conn.RemoteAddr().String())
@@ -115,8 +148,6 @@ func listen(port string, portChan chan string) {
 			}
 			return
 		}
-		// Save this route for lookup later
-		routes[conn.RemoteAddr().String()] = route{conn}
 		go relay(conn)
 	}
 }
@@ -143,6 +174,7 @@ func main() {
 		relayPort = os.Args[1]
 	}
 	routes = make(map[string]route)
+	relays = make(map[string]string)
 	ch := make(chan string)
 	defer close(ch)
 	go listen(relayPort, ch)
