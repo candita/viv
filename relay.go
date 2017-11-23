@@ -25,8 +25,10 @@ type route struct {
 
 var (
 	relayPort string
-	routes    map[string]route  // Index is relay port
+	routes    map[string]route  // Index is remote port
 	relays    map[string]string // Index is remote port
+	listeners map[string]string // Index is listener port
+	returns   map[string]string // Index is local port
 )
 
 // Handle the request to the relay server.  It is either a connection request or a relay setup request
@@ -47,8 +49,13 @@ func relay(conn net.Conn) {
 			return
 		} else {
 			content := string(bytes[:numBytes])
-			fmt.Printf("Local %s, remote: %s\n", conn.LocalAddr(), conn.RemoteAddr())
+			fmt.Printf("\nLocal %s, remote: %s\n", conn.LocalAddr(), conn.RemoteAddr())
 			fmt.Printf("INPUT: %s\n", content)
+
+			// Store this route to write on later
+			p, _ := getPort(conn.RemoteAddr())
+			routes[p] = route{conn}
+			fmt.Printf("Stored conn for port %s\n", p)
 
 			// If it is a relay setup request call askRelay
 			if strings.Contains(content, RELAY_REQUEST) {
@@ -58,47 +65,107 @@ func relay(conn net.Conn) {
 					return
 				} else {
 					// Remember where this relay request came from
-					relays[port] = conn.RemoteAddr().String()
-					fmt.Printf("Added port %s to relays[%s]\n", conn.RemoteAddr().String(), port)
+					p, _ = getPort(conn.RemoteAddr())
+					//listeners[p] = port
+					relays[port] = p
+					fmt.Printf("Added port %s to relays[%s]\n", p, port)
 					// Send a newline terminated message with the :port
 					conn.Write([]byte(":" + port + "\n"))
 				}
+				continue
 				// If it is a listening port request, get a new port and write it
 			} else if strings.Contains(content, LISTEN_PORT) {
-				newPort := askRelay()
+				newPort := askListen()
 				if newPort == "none" {
 					conn.Write([]byte("Error - no free ports"))
 					return
 				}
+				// Remember where this new port request goes to
+				p, _ := getPort(conn.RemoteAddr())
+				listeners[p] = newPort
+				fmt.Printf("Added port %s to listeners[%s]\n", newPort, p)
 				conn.Write([]byte("Listen:" + newPort + "\n"))
 				fmt.Printf("Sent listen message: %s to %s\n", newPort, conn.RemoteAddr().String())
-
+				continue
 			} else {
-				// Otherwise it is a client request, find saved connection or create new
-				var savedConn net.Conn
-				// Check for a relay made already for the client destination program
+				// Otherwise it is a client request or response, find saved connection or create new
+				var newConn net.Conn
+				// Check for a listener or control conn  made already for the client destination program
+
 				p, _ := getPort(conn.LocalAddr())
-				relayPort, ok := relays[p]
-				if ok {
-					_, ok = routes[relayPort]
+				r, _ := getPort(conn.RemoteAddr())
+				relayPort, okr := relays[p]
+				if okr {
+					listenerPort, ok := listeners[relayPort]
 					if ok {
-						savedConn = routes[relayPort].Connection
+						//_, routeFound := routes[listenerPort]
+						//if routeFound {
+						//newConn := routes[listenerPort].Connection
+						//fmt.Printf("Found conn in routes[%s] - %s\n", listenerPort, newConn.RemoteAddr().String())
+						//} else {
+
+						//Save return addr for this conn
+						returns[listenerPort] = r
+
+						fmt.Printf("Opening conn to %s\n", listenerPort)
+						// dial it up and write to it
+						newConn, err = net.Dial("tcp", ":"+listenerPort)
+						if newConn != nil {
+							fmt.Printf("newconn dest: %s\n", newConn.RemoteAddr().String())
+							// Preface it with the return port
+							newConn.Write([]byte(r + ":" + content))
+							fmt.Printf("Wrote %s to %s\n", r+":"+content, newConn.RemoteAddr().String())
+							defer newConn.Close()
+						} else {
+							fmt.Printf("newconn is nil?")
+							os.Exit(1)
+						}
+						if err != nil {
+							fmt.Printf("Error creating conn for write to %s via %s: %s\n", p, listenerPort, err.Error())
+							return
+						}
+						continue
+						//}
+					} else {
+						fmt.Printf("Error - no listener for relay %s\n", p)
+						return
+					}
+
+				} else {
+					fmt.Println("Route a response")
+					// Try to see if there is a routable port on content prefix
+					parts := strings.Split(content, ":")
+					if len(parts) > 1 {
+						port := parts[0]
+						content = strings.Replace(content, port+":", "", -1)
+						// Create a new conn to send to
+						/*newConn, err = net.Dial("tcp", ":"+port)
+						if newConn != nil {
+							newConn.Write([]byte(content))
+							fmt.Printf("Wrote %s to %s\n", content, newConn.RemoteAddr().String())
+							defer newConn.Close()
+							continue
+						} else {
+							fmt.Printf("Error opening conn to %s:%s\n", port, err.Error())
+						}
+						*/
+						// Find the conn to write to
+						_, ok := routes[port]
+						if ok {
+							savedConn := routes[port].Connection
+							savedConn.Write([]byte(content))
+							continue
+						} else {
+							fmt.Printf("No connection for port %s\n", port)
+						}
+						//continue
 					}
 				}
-				// Check for a route made already for the source port
-				if savedConn == nil {
-					// If there's no relay, check for a route
-					_, ok = routes[conn.RemoteAddr().String()]
-					if ok {
-						savedConn = routes[conn.RemoteAddr().String()].Connection
-					}
-				}
-				if savedConn != nil {
-					conn = savedConn
-				}
-				conn.Write([]byte(content))
-				fmt.Printf("Wrote %s to %s\n", content, conn.RemoteAddr().String())
 			}
+			// If all else fails
+			conn.Write([]byte("Unroutable:" + content))
+			fmt.Printf("Wrote %s to %s\n", content, conn.RemoteAddr().String())
+
 		}
 	}
 }
@@ -158,6 +225,25 @@ func askRelay() string {
 	}
 }
 
+// For an app asking for a listen port for itself, find a free port
+// TBD - make sure it doesn't get used before the app can use it
+func askListen() string {
+	ln, err := net.Listen("tcp", ":0")
+	if ln != nil {
+		defer ln.Close() // Always close it, we won't need to listen in this server
+	}
+	if err != nil {
+		fmt.Printf("Error on listen: %s\n", err.Error())
+		return "none"
+	}
+	assignedPort, err := getPort(ln.Addr())
+	if err != nil {
+		fmt.Println(err.Error())
+		return "none"
+	}
+	return assignedPort
+}
+
 // ./relay port
 func main() {
 	if len(os.Args) < 2 {
@@ -167,6 +253,8 @@ func main() {
 	}
 	routes = make(map[string]route)
 	relays = make(map[string]string)
+	listeners = make(map[string]string)
+	returns = make(map[string]string)
 	ch := make(chan string)
 	defer close(ch)
 	go listen(relayPort, ch)
