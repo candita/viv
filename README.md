@@ -1,7 +1,9 @@
 ***Build***
 
 go build -o relay
+
 cd echoserver
+
 go build 
 
 ***Deploy***
