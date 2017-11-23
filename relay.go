@@ -33,7 +33,6 @@ var (
 
 // Handle the request to the relay server.  It is either a connection request or a relay setup request
 func relay(conn net.Conn) {
-	//fmt.Printf("local: %s, remote: %s\n", conn.LocalAddr(), conn.RemoteAddr())
 	for {
 		var bytes = make([]byte, 2048)
 		numBytes, err := conn.Read(bytes)
@@ -49,13 +48,12 @@ func relay(conn net.Conn) {
 			return
 		} else {
 			content := string(bytes[:numBytes])
-			fmt.Printf("\nLocal %s, remote: %s\n", conn.LocalAddr(), conn.RemoteAddr())
-			fmt.Printf("INPUT: %s\n", content)
+			//fmt.Printf("\nLocal %s, remote: %s\n", conn.LocalAddr(), conn.RemoteAddr())
+			//fmt.Printf("INPUT: %s\n", content)
 
 			// Store this route to write on later
 			p, _ := getPort(conn.RemoteAddr())
 			routes[p] = route{conn}
-			fmt.Printf("Stored conn for port %s\n", p)
 
 			// If it is a relay setup request call askRelay
 			if strings.Contains(content, RELAY_REQUEST) {
@@ -66,9 +64,7 @@ func relay(conn net.Conn) {
 				} else {
 					// Remember where this relay request came from
 					p, _ = getPort(conn.RemoteAddr())
-					//listeners[p] = port
 					relays[port] = p
-					fmt.Printf("Added port %s to relays[%s]\n", p, port)
 					// Send a newline terminated message with the :port
 					conn.Write([]byte(":" + port + "\n"))
 				}
@@ -83,9 +79,7 @@ func relay(conn net.Conn) {
 				// Remember where this new port request goes to
 				p, _ := getPort(conn.RemoteAddr())
 				listeners[p] = newPort
-				fmt.Printf("Added port %s to listeners[%s]\n", newPort, p)
 				conn.Write([]byte("Listen:" + newPort + "\n"))
-				fmt.Printf("Sent listen message: %s to %s\n", newPort, conn.RemoteAddr().String())
 				continue
 			} else {
 				// Otherwise it is a client request or response, find saved connection or create new
@@ -98,57 +92,33 @@ func relay(conn net.Conn) {
 				if okr {
 					listenerPort, ok := listeners[relayPort]
 					if ok {
-						//_, routeFound := routes[listenerPort]
-						//if routeFound {
-						//newConn := routes[listenerPort].Connection
-						//fmt.Printf("Found conn in routes[%s] - %s\n", listenerPort, newConn.RemoteAddr().String())
-						//} else {
-
 						//Save return addr for this conn
 						returns[listenerPort] = r
 
-						fmt.Printf("Opening conn to %s\n", listenerPort)
 						// dial it up and write to it
 						newConn, err = net.Dial("tcp", ":"+listenerPort)
-						if newConn != nil {
-							fmt.Printf("newconn dest: %s\n", newConn.RemoteAddr().String())
-							// Preface it with the return port
-							newConn.Write([]byte(r + ":" + content))
-							fmt.Printf("Wrote %s to %s\n", r+":"+content, newConn.RemoteAddr().String())
-							defer newConn.Close()
-						} else {
-							fmt.Printf("newconn is nil?")
-							os.Exit(1)
-						}
 						if err != nil {
 							fmt.Printf("Error creating conn for write to %s via %s: %s\n", p, listenerPort, err.Error())
-							return
+						} else if newConn != nil {
+							// Preface it with the return port
+							newConn.Write([]byte(r + ":" + content))
+							defer newConn.Close()
+						} else {
+							fmt.Printf("Error - connection was terminated, could not write %s\n", content)
 						}
 						continue
-						//}
 					} else {
 						fmt.Printf("Error - no listener for relay %s\n", p)
 						return
 					}
 
 				} else {
-					fmt.Println("Route a response")
+					// This is a response, not a request
 					// Try to see if there is a routable port on content prefix
 					parts := strings.Split(content, ":")
 					if len(parts) > 1 {
 						port := parts[0]
 						content = strings.Replace(content, port+":", "", -1)
-						// Create a new conn to send to
-						/*newConn, err = net.Dial("tcp", ":"+port)
-						if newConn != nil {
-							newConn.Write([]byte(content))
-							fmt.Printf("Wrote %s to %s\n", content, newConn.RemoteAddr().String())
-							defer newConn.Close()
-							continue
-						} else {
-							fmt.Printf("Error opening conn to %s:%s\n", port, err.Error())
-						}
-						*/
 						// Find the conn to write to
 						_, ok := routes[port]
 						if ok {
@@ -156,16 +126,14 @@ func relay(conn net.Conn) {
 							savedConn.Write([]byte(content))
 							continue
 						} else {
-							fmt.Printf("No connection for port %s\n", port)
+							fmt.Printf("Error - connection missing for port %s\n", port)
+							return
 						}
-						//continue
 					}
 				}
 			}
 			// If all else fails
 			conn.Write([]byte("Unroutable:" + content))
-			fmt.Printf("Wrote %s to %s\n", content, conn.RemoteAddr().String())
-
 		}
 	}
 }
@@ -226,7 +194,7 @@ func askRelay() string {
 }
 
 // For an app asking for a listen port for itself, find a free port
-// TBD - make sure it doesn't get used before the app can use it
+// TBD - make sure it doesn't get used before the app made it
 func askListen() string {
 	ln, err := net.Listen("tcp", ":0")
 	if ln != nil {

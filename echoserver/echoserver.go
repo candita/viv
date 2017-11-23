@@ -49,32 +49,10 @@ func copy(oldConn net.Conn) {
 			// Connection was gracefully closed, exit
 			return
 		}
-		fmt.Printf("Local %s, remote: %s\n", conn.LocalAddr(), conn.RemoteAddr())
-		fmt.Println("Reading " + string(bytes[:numBytes]))
 
-		// Write it back to the client by parsing the return address from content
+		// Write it back to the relayserver
 		content := string(bytes[:numBytes])
-		// Get the return port from the message
-		/*var returnPort string
-		parts := strings.Split(content, ":")
-		if len(parts) > 1 {
-			returnPort = parts[0]
-			content = parts[1]
-		}*/
-		fmt.Println("Writing " + content)
-		oldConn.Write([]byte(content + " echo")) // only this can be seen on the relayserver
-		//conn.Write([]byte("echoed " + content))
-
-		/*respConn, err := net.Dial("tcp", host+strings.Replace(someport, "\n", "", -1))
-		if respConn != nil {
-			defer respConn.Close()
-		}
-		if err != nil {
-			fmt.Printf("Error dialing relay server: %s\n", err.Error())
-			return
-		}
-		respConn.Write([]byte(content + " echo"))
-		*/
+		oldConn.Write([]byte(content)) // only this can be seen on the relayserver
 	}
 }
 
@@ -108,7 +86,6 @@ func getConnection(conn net.Conn) (newConn net.Listener, err error) {
 	if strings.Contains(contents, "Listen:") {
 		port = strings.Replace(contents, "Listen:", "", -1)
 		port = strings.TrimRight(port, "\n")
-		//fmt.Printf("Received port: [%s]\n", port)
 		newConn, err = net.Listen("tcp", ":"+port)
 		if err != nil {
 			return nil, err
@@ -148,8 +125,6 @@ func main() {
 	}
 	fmt.Printf("established relay address: %s\n", publicPort)
 
-	//for {
 	go copy(conn)
-	//}
-	select {}
+	select {} // wait here
 }
